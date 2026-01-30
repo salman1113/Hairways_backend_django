@@ -138,3 +138,21 @@ STATIC_URL = 'static/'
 
 #Custom User Model Setting
 AUTH_USER_MODEL = 'accounts.User'
+
+
+# settings.py 
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated', # by default everyside must want login
+    ),
+}
+
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # 1 day login
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
