@@ -1,7 +1,9 @@
-from rest_framework import viewsets, permissions  # permissions നിർബന്ധമാണ്
+from rest_framework import viewsets, permissions
 from django.contrib.auth import get_user_model
 from .models import EmployeeProfile
 from .serializers import UserSerializer, EmployeeProfileSerializer
+from rest_framework.decorators import action  # 👈 Import 1
+from rest_framework.response import Response  # 👈 Import 2
 
 User = get_user_model()
 
@@ -12,13 +14,16 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
-    # 🟢 ഇതാണ് പ്രശ്നക്കാരൻ! ഇത് കൃത്യമായി ഉണ്ടെന്ന് ഉറപ്പാക്കുക.
     def get_permissions(self):
         if self.action == 'create': 
-            # രജിസ്റ്റർ ചെയ്യാൻ വരുന്നവർക്ക് പാസ്സ് വേണ്ട (AllowAny)
             return [permissions.AllowAny()]
-        # ബാക്കി കാര്യങ്ങൾക്ക് ലോഗിൻ വേണം
         return [permissions.IsAuthenticated()]
+
+    # 👇 ഈ ഭാഗം പുതിയതായി ചേർക്കുക (To fix 404 Error)
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     """

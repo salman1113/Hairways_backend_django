@@ -23,9 +23,20 @@ class User(AbstractUser):
 
 class EmployeeProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
-    expertise = models.CharField(max_length=100, default="General")
+    
+    # Professional Details
+    job_title = models.CharField(max_length=50, default="Stylist") # e.g., Senior Barber
+    years_of_experience = models.PositiveIntegerField(default=1) # e.g., 5 Years
+    expertise = models.CharField(max_length=255, default="General", help_text="Comma separated skills")
+    
+    # Public Info
+    bio = models.TextField(blank=True, max_length=300, help_text="Short intro for customers")
+    rating = models.DecimalField(max_digits=3, decimal_places=1, default=5.0) # e.g., 4.8
+    review_count = models.PositiveIntegerField(default=0) # Total reviews received
+
+    # Admin / Internal
     commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     is_available = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Profile: {self.user.email}"
+        return f"{self.user.email} - {self.job_title}"

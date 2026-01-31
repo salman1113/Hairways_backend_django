@@ -29,7 +29,7 @@ class Booking(models.Model):
 
     # 1. Customer Link (Optional to allow Walk-ins)
     customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
-    related_name='bookings', null=True, blank=True)
+                                 related_name='bookings', null=True, blank=True)
     
     # 2. Walk-in Details (For non-registered guests)
     guest_name = models.CharField(max_length=100, blank=True, null=True, default="Walk-in Guest")
@@ -40,8 +40,15 @@ class Booking(models.Model):
 
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_bookings')
     
-    token_number = models.PositiveIntegerField()
-    booking_date = models.DateField(auto_now_add=True)
+    # 🔴 FIX 1: Token Number CharField ആക്കി (T-1234 സേവ് ചെയ്യാൻ)
+    token_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
+
+    # 🔴 FIX 2: auto_now_add മാറ്റി (യൂസർക്ക് ഡേറ്റ് സെലക്ട് ചെയ്യാൻ)
+    booking_date = models.DateField()
+
+    # 🔴 FIX 3: booking_time പുതിയതായി ചേർത്തു (ഇതാണ് എറർ മാറ്റുന്നത്)
+    booking_time = models.TimeField()
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
 
     # Time Tracking (Critical for AI & Queue Logic)
