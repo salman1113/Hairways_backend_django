@@ -1,119 +1,113 @@
 from rest_framework import serializers
 from .models import Booking, BookingItem, BarberQueue
+from services.models import Service
 from accounts.serializers import UserSerializer, EmployeeProfileSerializer
-from services.serializers import ServiceSerializer
-from services.models import Service # Import Service model
 from datetime import datetime, timedelta, date
 
 class BookingItemSerializer(serializers.ModelSerializer):
-    service_name = serializers.ReadOnlyField(source='service.name')
-    service_duration = serializers.ReadOnlyField(source='service.duration_minutes')
+    service_name = serializers.CharField(source='service.name', read_only=True)
+    service_duration = serializers.IntegerField(source='service.duration_minutes', read_only=True)
     
-    # Service ID accept cheyyan PrimaryKeyRelatedField venam
-    service = serializers.PrimaryKeyRelatedField(queryset=Service.objects.all())
-
     class Meta:
         model = BookingItem
         fields = ['id', 'service', 'service_name', 'service_duration', 'price']
 
 class BookingSerializer(serializers.ModelSerializer):
-    # items write cheyyanum pattanam (read_only maatti)
-    items = BookingItemSerializer(many=True) 
-    
-    customer_name = serializers.SerializerMethodField()
-    display_name = serializers.SerializerMethodField()
+    items = BookingItemSerializer(many=True, read_only=True)
+    customer_details = UserSerializer(source='customer', read_only=True)
+    employee_details = EmployeeProfileSerializer(source='employee', read_only=True)
 
-    def get_customer_name(self, obj):
-        return obj.customer.email if obj.customer else None
-
-    def get_display_name(self, obj):
-        if obj.customer:
-            return obj.customer.email
-        return f"{obj.guest_name} (Guest)"
+    service_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True
+    )
 
     class Meta:
         model = Booking
         fields = [
-            'id', 'token_number', 'booking_date', 'booking_time', # booking_time added
-            'status', 'employee', # employee added
-            'customer', 'customer_name', 'display_name', 
+            'id', 'token_number', 
+            'customer', 'customer_details', 
             'guest_name', 'guest_phone', 'is_walk_in',
-            'estimated_start_time', 'total_price', 'items'
+            'employee', 'employee_details',
+            'booking_date', 'booking_time', 'status',
+            'estimated_start_time', 'actual_start_time', 'actual_end_time',
+            'total_price', 'created_at',
+            'items', 'service_ids'
         ]
-        extra_kwargs = {
-            'customer': {'read_only': True},
-            'is_walk_in': {'read_only': True},
-            'token_number': {'read_only': True} # Token auto-generate aanu
-        }
+        read_only_fields = ['token_number', 'total_price', 'created_at', 'status', 'actual_start_time', 'actual_end_time']
 
-    # 🔥 CRITICAL: Items save cheyyanulla function
-    def create(self, validated_data):
-        # 1. Items separate cheyyunnu
-        items_data = validated_data.pop('items')
-        
-        # 2. User login cheythittundengil customer aayi set cheyyum
-        user = self.context['request'].user
-        if user.is_authenticated:
-            validated_data['customer'] = user
-            validated_data['is_walk_in'] = False
-        
-        # 3. Booking create cheyyunnu
-        booking = Booking.objects.create(**validated_data)
-        
-        # 4. Items loop cheythu save cheyyunnu
-        for item in items_data:
-            BookingItem.objects.create(booking=booking, **item)
-            
-        return booking
-    
-
+    # 🔥 FIXED: Time Overlap Validation (ഇടയിലുള്ള സമയം ബ്ലോക്ക് ചെയ്യുന്നു)
     def validate(self, data):
         employee = data.get('employee')
         booking_date = data.get('booking_date')
         booking_time = data.get('booking_time')
+        service_ids = data.get('service_ids', [])
 
         if employee and booking_date and booking_time:
-            # Start checking from the requested time
-            current_time_check = booking_time
+            # 1. പുതിയ ബുക്കിംഗിന്റെ ദൈർഘ്യം (Duration) കണക്കാക്കുന്നു
+            req_duration = 0
+            if service_ids:
+                services = Service.objects.filter(id__in=service_ids)
+                req_duration = sum(s.duration_minutes for s in services)
             
-            # Loop to find the next free slot
-            # (Limit to 10 checks to avoid infinite loops if whole day is busy)
-            for _ in range(10): 
-                conflicting_booking = Booking.objects.filter(
-                    employee=employee,
-                    booking_date=booking_date,
-                    booking_time=current_time_check,
-                    status__in=['PENDING', 'CONFIRMED', 'IN_PROGRESS']
-                ).first()
+            if req_duration == 0: req_duration = 30 # Default safety
+            
+            # 2. പുതിയ ബുക്കിംഗിന്റെ Start & End Time കണ്ടുപിടിക്കുന്നു
+            req_start_dt = datetime.combine(booking_date, booking_time)
+            req_end_dt = req_start_dt + timedelta(minutes=req_duration)
 
-                if conflicting_booking:
-                    # If busy, add duration (default 30 mins) to jump to next slot
-                    duration = 30 
-                    if conflicting_booking.items.exists():
-                        duration = conflicting_booking.items.first().service.duration_minutes
+            # 3. ആ ബാർബർക്ക് അന്നേ ദിവസമുള്ള എല്ലാ ബുക്കിംഗുകളും എടുക്കുന്നു
+            day_bookings = Booking.objects.filter(
+                employee=employee,
+                booking_date=booking_date,
+                status__in=['PENDING', 'CONFIRMED', 'IN_PROGRESS']
+            ).prefetch_related('items__service')
+
+            # 4. ഓരോ ബുക്കിംഗുമായും കൂട്ടിമുട്ടുന്നുണ്ടോ (Overlap) എന്ന് നോക്കുന്നു
+            for booking in day_bookings:
+                # നിലവിലുള്ള ബുക്കിംഗിന്റെ ദൈർഘ്യം
+                exist_duration = sum(item.service.duration_minutes for item in booking.items.all())
+                if exist_duration == 0: exist_duration = 30
+                
+                # നിലവിലുള്ള ബുക്കിംഗിന്റെ Start & End Time
+                exist_start_dt = datetime.combine(booking.booking_date, booking.booking_time)
+                exist_end_dt = exist_start_dt + timedelta(minutes=exist_duration)
+
+                # 🔥 OVERLAP CHECK FORMULA:
+                # (NewStart < OldEnd) AND (NewEnd > OldStart)
+                if req_start_dt < exist_end_dt and req_end_dt > exist_start_dt:
                     
-                    # Calculate next slot
-                    dummy_date = datetime.combine(date.today(), current_time_check)
-                    next_slot = dummy_date + timedelta(minutes=duration)
-                    current_time_check = next_slot.time() # Update time for next loop check
-                else:
-                    # Found a free slot!
-                    # If this free slot is NOT the original requested time, raise error
-                    if current_time_check != booking_time:
-                         raise serializers.ValidationError({
-                            "error": "Slot Taken",
-                            "message": f"Stylist is busy until {current_time_check.strftime('%H:%M')}.",
-                            "suggested_time": current_time_check.strftime("%H:%M")
-                        })
-                    # If it IS the requested time, loop breaks and validation passes
-                    break 
+                    # Conflict കണ്ടെത്തി! ആ ബുക്കിംഗ് തീരുന്ന സമയം സജസ്റ്റ് ചെയ്യുന്നു.
+                    suggested_time = exist_end_dt.time()
+                    
+                    raise serializers.ValidationError({
+                        "error": "Slot Taken",
+                        "message": f"Stylist is busy until {suggested_time.strftime('%H:%M')}.",
+                        "suggested_time": suggested_time.strftime("%H:%M")
+                    })
 
         return data
-    
-    
-class BarberQueueSerializer(serializers.ModelSerializer):
-    employee_name = serializers.ReadOnlyField(source='employee.user.email')
 
+    def create(self, validated_data):
+        service_ids = validated_data.pop('service_ids', [])
+        booking = Booking.objects.create(**validated_data)
+        
+        total_price = 0
+        for service_id in service_ids:
+            try:
+                service = Service.objects.get(id=service_id)
+                BookingItem.objects.create(booking=booking, service=service, price=service.price)
+                total_price += service.price
+            except Service.DoesNotExist:
+                continue
+            
+        booking.total_price = total_price
+        booking.save()
+        return booking
+
+class BarberQueueSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.user.username', read_only=True)
+    employee_image = serializers.ImageField(source='employee.user.profile_picture', read_only=True)
+    
     class Meta:
         model = BarberQueue
-        fields = ['id', 'employee', 'employee_name', 'joined_at']
+        fields = ['id', 'employee', 'employee_name', 'employee_image', 'joined_at']
