@@ -5,7 +5,6 @@ from django.db.models import Prefetch
 from django.utils import timezone
 from .models import Booking, BookingItem, BarberQueue
 from .serializers import BookingSerializer, BarberQueueSerializer
-import random 
 
 class BookingViewSet(viewsets.ModelViewSet):
     serializer_class = BookingSerializer
@@ -17,6 +16,12 @@ class BookingViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             Prefetch('items', queryset=BookingItem.objects.select_related('service'))
         ).order_by('-created_at')
+
+        # 🔥 FIX 1: Date Filtering Logic (For Dashboard)
+        # url-ൽ ?date=2026-02-03 എന്ന് വന്നാൽ ആ ദിവസത്തെ മാത്രം എടുക്കും
+        date_param = self.request.query_params.get('date')
+        if date_param:
+            queryset = queryset.filter(booking_date=date_param)
 
         user = self.request.user
         # Admin & Employees see all, Customers see only theirs
@@ -32,15 +37,25 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         if not serializer.is_valid():
             print("❌ Booking Failed:", serializer.errors)
-            # If validation fails (e.g., Slot Taken), send the error details clearly
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    # 🔥 FIX 2: Sequential Token Generation (Reset Daily)
     def perform_create(self, serializer):
-        token = f"T-{random.randint(1000, 9999)}"
+        # 1. ബുക്കിംഗ് ഡേറ്റ് എടുക്കുന്നു
+        booking_date = serializer.validated_data.get('booking_date')
+
+        # 2. ആ ദിവസത്തെ മൊത്തം ബുക്കിംഗുകൾ എണ്ണുന്നു
+        existing_count = Booking.objects.filter(booking_date=booking_date).count()
+
+        # 3. അടുത്ത ടോക്കൺ നമ്പർ (എണ്ണം + 1)
+        next_token = existing_count + 1
+        token = f"T-{next_token}"  # ഉദാഹരണത്തിന്: T-1, T-2...
+
+        # 4. സേവ് ചെയ്യുന്നു
         if self.request.user.is_authenticated:
             serializer.save(customer=self.request.user, is_walk_in=False, token_number=token)
         else:
