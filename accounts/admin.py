@@ -8,11 +8,11 @@ class CustomUserAdmin(UserAdmin):
     form = CustomUserChangeForm
     model = User
     
-    # ലിസ്റ്റിൽ കാണിക്കേണ്ട കാര്യങ്ങൾ
+
     list_display = ('email', 'username', 'role', 'is_staff', 'is_active')
     ordering = ('email',)
 
-    # എഡിറ്റ് ചെയ്യുമ്പോൾ കാണിക്കേണ്ടവ (ഇവിടെ മാറ്റമൊന്നുമില്ല)
+
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal Info', {'fields': ('username', 'phone_number', 'profile_picture', 'face_shape')}),

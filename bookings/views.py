@@ -17,20 +17,25 @@ class BookingViewSet(viewsets.ModelViewSet):
             Prefetch('items', queryset=BookingItem.objects.select_related('service'))
         ).order_by('-created_at')
 
-        # 🔥 FIX 1: Date Filtering Logic (For Dashboard)
-        # url-ൽ ?date=2026-02-03 എന്ന് വന്നാൽ ആ ദിവസത്തെ മാത്രം എടുക്കും
         date_param = self.request.query_params.get('date')
         if date_param:
             queryset = queryset.filter(booking_date=date_param)
 
+        """
+        Custom Queryset Filter:
+        - Admin/Staff: Can see ALL bookings.
+        - Customers: Can strictly see ONLY their own bookings.
+        - Also supports filtering by ?date=YYYY-MM-DD
+        """
         user = self.request.user
-        # Admin & Employees see all, Customers see only theirs
         if user.is_authenticated and not (user.is_staff or user.role in ['ADMIN', 'MANAGER', 'EMPLOYEE']):
              return queryset.filter(customer=user)
         return queryset
     
-    # 🔥 Create Method with Better Error Handling
     def create(self, request, *args, **kwargs):
+        """
+        Logs the incoming booking request for debugging purposes before processing.
+        """
         print(f"📥 Booking Request from {request.user}: {request.data}") 
         
         serializer = self.get_serializer(data=request.data)
@@ -45,17 +50,17 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     # 🔥 FIX 2: Sequential Token Generation (Reset Daily)
     def perform_create(self, serializer):
-        # 1. ബുക്കിംഗ് ഡേറ്റ് എടുക്കുന്നു
+        """
+        Sequential Token Generation:
+        - Generates a daily resetting token (e.g., T-1, T-2).
+        - format: T-{count + 1}
+        """
         booking_date = serializer.validated_data.get('booking_date')
-
-        # 2. ആ ദിവസത്തെ മൊത്തം ബുക്കിംഗുകൾ എണ്ണുന്നു
         existing_count = Booking.objects.filter(booking_date=booking_date).count()
 
-        # 3. അടുത്ത ടോക്കൺ നമ്പർ (എണ്ണം + 1)
         next_token = existing_count + 1
-        token = f"T-{next_token}"  # ഉദാഹരണത്തിന്: T-1, T-2...
+        token = f"T-{next_token}"
 
-        # 4. സേവ് ചെയ്യുന്നു
         if self.request.user.is_authenticated:
             serializer.save(customer=self.request.user, is_walk_in=False, token_number=token)
         else:
@@ -65,6 +70,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel_booking(self, request, pk=None):
+        """
+        Cancels a booking if it is not already completed or cancelled.
+        """
         booking = self.get_object()
         if booking.status in ['COMPLETED', 'CANCELLED']:
             return Response({'error': 'Cannot cancel this booking'}, status=400)
@@ -74,6 +82,10 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def reschedule(self, request, pk=None):
+        """
+        Reschedules a booking by shifting it forward by 15 minutes.
+        - Allowed only once per booking.
+        """
         booking = self.get_object()
         if booking.is_rescheduled: return Response({"error": "Reschedule limit reached"}, status=400)
         
@@ -89,6 +101,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def start_job(self, request, pk=None):
+        """
+        Marks booking as IN_PROGRESS and records the actual start time.
+        """
         booking = self.get_object()
         booking.status = 'IN_PROGRESS'
         booking.actual_start_time = timezone.now()
@@ -97,6 +112,9 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def finish_job(self, request, pk=None):
+        """
+        Marks booking as COMPLETED, records end time, and calculates employee commission.
+        """
         booking = self.get_object()
         if booking.status == 'COMPLETED': return Response({"status": "Already Completed"}, status=400)
         
@@ -114,6 +132,12 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
+        """
+        Admin Dashboard Stats:
+        - Total Revenue (Today)
+        - Active Customers
+        - Queue Length
+        """
         if request.user.role != 'ADMIN': return Response({"error": "Admin only"}, status=403)
         today = timezone.now().date()
         todays_bookings = Booking.objects.filter(booking_date=today)

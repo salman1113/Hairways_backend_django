@@ -2,6 +2,12 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 class User(AbstractUser):
+    """
+    Custom User Model:
+    - Replaces default Django User.
+    - Uses 'email' as the unique identifier for login.
+    - Includes 'role' to distinguish between Admin, Manager, Employee, and Customer.
+    """
     ROLE_CHOICES = (
         ('ADMIN', 'Admin'),
         ('MANAGER', 'Manager'),
@@ -26,6 +32,12 @@ class User(AbstractUser):
         return self.email
 
 class EmployeeProfile(models.Model):
+    """
+    Extended Profile for Employees:
+    - Linked one-to-one with the User model.
+    - Stores professional details like Job Title, Experience, and Commission Rate.
+    - Tracks shift timings and wallet balance.
+    """
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     
     # Professional Details

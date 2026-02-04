@@ -7,7 +7,8 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ServiceSerializer(serializers.ModelSerializer):
-    # കാണുമ്പോൾ കാറ്റഗറിയുടെ പേര് കിട്ടാൻ (Read Only)
+
+    # To display category name in API response (Read Only)
     category_name = serializers.ReadOnlyField(source='category.name')
 
     class Meta:
@@ -20,8 +21,8 @@ class ServiceSerializer(serializers.ModelSerializer):
             'duration_minutes', 
             'image', 
             'is_active', 
-            'category',       # 👈 പ്രധാനം: ഇത് വഴി കാറ്റഗറി ID സേവ് ചെയ്യാം
-            'category_name'   # 👈 ഇത് വഴി കാറ്റഗറി പേര് കാണാം
+            'category',
+            'category_name'
         ]
 
 class ProductSerializer(serializers.ModelSerializer):

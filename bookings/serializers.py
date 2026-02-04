@@ -35,15 +35,19 @@ class BookingSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['token_number', 'total_price', 'created_at', 'status', 'actual_start_time', 'actual_end_time']
 
-    # 🔥 FIXED: Time Overlap Validation (ഇടയിലുള്ള സമയം ബ്ലോക്ക് ചെയ്യുന്നു)
+    # 🔥 FIXED: Time Overlap Validation
     def validate(self, data):
+        """
+        Validates the booking time to ensure no overlap with existing appointments for the same employee.
+        - Calculates the duration based on services selected.
+        - Checks for conflicts in the database.
+        """
         employee = data.get('employee')
         booking_date = data.get('booking_date')
         booking_time = data.get('booking_time')
         service_ids = data.get('service_ids', [])
 
         if employee and booking_date and booking_time:
-            # 1. പുതിയ ബുക്കിംഗിന്റെ ദൈർഘ്യം (Duration) കണക്കാക്കുന്നു
             req_duration = 0
             if service_ids:
                 services = Service.objects.filter(id__in=service_ids)
@@ -51,32 +55,26 @@ class BookingSerializer(serializers.ModelSerializer):
             
             if req_duration == 0: req_duration = 30 # Default safety
             
-            # 2. പുതിയ ബുക്കിംഗിന്റെ Start & End Time കണ്ടുപിടിക്കുന്നു
             req_start_dt = datetime.combine(booking_date, booking_time)
             req_end_dt = req_start_dt + timedelta(minutes=req_duration)
 
-            # 3. ആ ബാർബർക്ക് അന്നേ ദിവസമുള്ള എല്ലാ ബുക്കിംഗുകളും എടുക്കുന്നു
             day_bookings = Booking.objects.filter(
                 employee=employee,
                 booking_date=booking_date,
                 status__in=['PENDING', 'CONFIRMED', 'IN_PROGRESS']
             ).prefetch_related('items__service')
 
-            # 4. ഓരോ ബുക്കിംഗുമായും കൂട്ടിമുട്ടുന്നുണ്ടോ (Overlap) എന്ന് നോക്കുന്നു
+
             for booking in day_bookings:
-                # നിലവിലുള്ള ബുക്കിംഗിന്റെ ദൈർഘ്യം
                 exist_duration = sum(item.service.duration_minutes for item in booking.items.all())
                 if exist_duration == 0: exist_duration = 30
                 
-                # നിലവിലുള്ള ബുക്കിംഗിന്റെ Start & End Time
                 exist_start_dt = datetime.combine(booking.booking_date, booking.booking_time)
                 exist_end_dt = exist_start_dt + timedelta(minutes=exist_duration)
 
                 # 🔥 OVERLAP CHECK FORMULA:
                 # (NewStart < OldEnd) AND (NewEnd > OldStart)
                 if req_start_dt < exist_end_dt and req_end_dt > exist_start_dt:
-                    
-                    # Conflict കണ്ടെത്തി! ആ ബുക്കിംഗ് തീരുന്ന സമയം സജസ്റ്റ് ചെയ്യുന്നു.
                     suggested_time = exist_end_dt.time()
                     
                     raise serializers.ValidationError({
@@ -88,6 +86,11 @@ class BookingSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        """
+        Custom Create Method:
+        - Extracts `service_ids` to create related `BookingItem` entries.
+        - Calculates the total price based on service prices.
+        """
         service_ids = validated_data.pop('service_ids', [])
         booking = Booking.objects.create(**validated_data)
         

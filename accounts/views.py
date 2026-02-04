@@ -36,6 +36,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def me(self, request):
+        """
+        Retrieves the profile of the currently authenticated user.
+        """
         if request.user.is_authenticated:
             serializer = self.get_serializer(request.user)
             return Response(serializer.data)
@@ -52,13 +55,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     # Use Custom Serializer only for Creating Employees
     def get_serializer_class(self):
+        """
+        Selects the serializer based on the action:
+        - create: EmployeeCreationSerializer (Handles User + Profile creation)
+        - others: EmployeeProfileSerializer (Read/Update Profile only)
+        """
         if self.action == 'create':
             return EmployeeCreationSerializer
         return EmployeeProfileSerializer
 
     # 🔥 CRITICAL FIX: Delete the User when Employee is deleted
-    # 
     def perform_destroy(self, instance):
+        """
+        Hard Delete: Deletes the associated User object when the EmployeeProfile is deleted.
+        Django's on_delete=CASCADE mechanism handles the profile deletion automatically.
+        """
         user = instance.user
         user.delete() # This deletes the User AND the Profile (Cascade)
 
@@ -74,6 +85,11 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def punch(self, request):
+        """
+        Attendance Punch Logic:
+        - Logic: First punch of the day -> Check-In.
+        - Second punch of the day -> Check-Out.
+        """
         user = request.user
         if not hasattr(user, 'employee_profile'):
             return Response({"error": "Only employees can punch attendance"}, status=403)

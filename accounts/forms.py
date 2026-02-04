@@ -3,7 +3,7 @@ from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from .models import User
 
 class CustomUserCreationForm(UserCreationForm):
-    # Dynamic lookup ഒഴിവാക്കി നേരിട്ട് Text കൊടുത്തു. ഇനി Error വരില്ല.
+
     password_1 = forms.CharField(
         label="Password", 
         widget=forms.PasswordInput, 
