@@ -5,7 +5,13 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend # 🔥 For Filtering Attendance
 from .models import EmployeeProfile, Attendance
-from .serializers import UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, EmployeeCreationSerializer
+from .serializers import UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, EmployeeCreationSerializer, GoogleLoginSerializer
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from django.conf import settings
+import uuid
 
 User = get_user_model()
 
@@ -111,4 +117,64 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             
             attendance.check_out = now_time
             attendance.save()
+            attendance.save()
             return Response({"status": "Punched Out", "time": now_time})
+
+class GoogleLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def post(self, request):
+        serializer = GoogleLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        token = serializer.validated_data['id_token']
+        
+        try:
+            # Verify the token with Google's servers
+            # REPLACE 'YOUR_GOOGLE_CLIENT_ID' with your actual Client ID from Google Cloud Console
+            id_info = id_token.verify_oauth2_token(
+                token, 
+                google_requests.Request(), 
+                getattr(settings, 'GOOGLE_CLIENT_ID', None)
+            )
+
+            # Extract user info
+            email = id_info.get('email')
+            first_name = id_info.get('given_name', '')
+            last_name = id_info.get('family_name', '')
+
+            # Check if user exists
+            user, created = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    'username': email, # Fallback since you use email as username
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': 'CUSTOMER',
+                    # Handle phone_number if it is NOT NULL in DB. 
+                    # If strictly required, use a placeholder or handle explicitly.
+                    'phone_number': '' 
+                }
+            )
+
+            if created:
+                user.set_unusable_password()
+                user.save()
+
+            # Generate JWT Tokens
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'email': user.email,
+                    'role': user.role,
+                    'first_name': user.first_name
+                }
+            }, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            # Invalid token
+            return Response({'error': 'Invalid Google Token'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

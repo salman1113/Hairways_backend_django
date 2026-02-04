@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     # Third-party Packages
     'rest_framework',
     'corsheaders',
+    'django_filters',
 
     # Our Custom Apps
     'accounts',
@@ -159,3 +160,6 @@ SIMPLE_JWT = {
 
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Google Auth Settings
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')

@@ -116,5 +116,9 @@ class EmployeeCreationSerializer(serializers.ModelSerializer):
                 employee.save()
                 return employee
 
+
         except Exception as e:
             raise serializers.ValidationError({"error": str(e)})
+
+class GoogleLoginSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
