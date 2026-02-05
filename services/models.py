@@ -24,7 +24,7 @@ class Service(models.Model):
 
 class Product(models.Model):
     """
-    🌟 NEW: Inventory Management [PDF Module 1.4]
+    Inventory Management [PDF Module 1.4]
     Track usage of saloon products (Shampoos, Creams).
     """
     name = models.CharField(max_length=100)

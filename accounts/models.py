@@ -20,8 +20,6 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
     face_shape = models.CharField(max_length=20, null=True, blank=True)
-    
-    # 🌟 NEW: Gamified Loyalty System [PDF Module 2.3]
     points = models.PositiveIntegerField(default=0, help_text="Loyalty Points (1 Haircut = 10 Points)")
     tier = models.CharField(max_length=20, default="Silver", choices=[("Silver", "Silver"), ("Gold", "Gold"), ("Platinum", "Platinum")])
 
@@ -54,11 +52,8 @@ class EmployeeProfile(models.Model):
     commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, help_text="Commission percentage per service")
     is_available = models.BooleanField(default=True)
 
-    # 🌟 NEW: Shift Management [PDF Module 5]
     shift_start = models.TimeField(null=True, blank=True, help_text="Shift Start Time")
     shift_end = models.TimeField(null=True, blank=True, help_text="Shift End Time")
-    
-    # 🌟 NEW: Personal Earnings Tracker [PDF Module 3.3]
     wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Accumulated Commission")
 
     def __str__(self):
@@ -66,7 +61,7 @@ class EmployeeProfile(models.Model):
 
 class Attendance(models.Model):
     """
-    🌟 NEW: Biometric HR & Payroll System [PDF Module 1.2]
+    NEW: Biometric HR & Payroll System
     Tracks daily check-in/check-out for payroll calculation.
     """
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='attendance')

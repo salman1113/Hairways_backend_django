@@ -21,7 +21,6 @@ class AttendanceSerializer(serializers.ModelSerializer):
 class EmployeeProfileSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     attendance_today = serializers.SerializerMethodField()
-    
     username = serializers.CharField(source='user.username')
     email = serializers.EmailField(source='user.email')
     phone_number = serializers.CharField(source='user.phone_number')
@@ -56,7 +55,7 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-# 🔥 FIXED CREATION SERIALIZER (Solves Duplicate ID Error)
+# CREATION SERIALIZER
 class EmployeeCreationSerializer(serializers.ModelSerializer):
     username = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
@@ -102,7 +101,7 @@ class EmployeeCreationSerializer(serializers.ModelSerializer):
                 # 2. Create User (This triggers the Signal to create Profile)
                 user = User.objects.create_user(**user_data, role='EMPLOYEE')
                 
-                # 3. 🔥 CRITICAL FIX: Get the auto-created profile instead of creating new one
+                # 3. CRITICAL FIX: Get the auto-created profile instead of creating new one
                 if hasattr(user, 'employee_profile'):
                     employee = user.employee_profile
                 else:

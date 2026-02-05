@@ -48,7 +48,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    # 🔥 FIX 2: Sequential Token Generation (Reset Daily)
+    # Sequential Token Generation (Reset Daily)
     def perform_create(self, serializer):
         """
         Sequential Token Generation:

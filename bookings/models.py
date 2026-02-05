@@ -23,28 +23,21 @@ class Booking(models.Model):
         ('CANCELLED', 'Cancelled'),
     )
 
-    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
-                                 related_name='bookings', null=True, blank=True)
-    
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings', null=True, blank=True)
     guest_name = models.CharField(max_length=100, blank=True, null=True, default="Walk-in Guest")
     guest_phone = models.CharField(max_length=15, blank=True, null=True)
     is_walk_in = models.BooleanField(default=False)
-
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_bookings')
-    
     token_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
     booking_date = models.DateField()
     booking_time = models.TimeField()
-
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
-
     estimated_start_time = models.DateTimeField(null=True, blank=True)
     actual_start_time = models.DateTimeField(null=True, blank=True)
     actual_end_time = models.DateTimeField(null=True, blank=True)
     
-    # 🔥 NEW: Reschedule Tracking [PDF Module 2.2]
+    # Reschedule Tracking
     is_rescheduled = models.BooleanField(default=False, help_text="Can only reschedule once")
-
     total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     created_at = models.DateTimeField(auto_now_add=True)
 

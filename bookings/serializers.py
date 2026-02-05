@@ -16,10 +16,7 @@ class BookingSerializer(serializers.ModelSerializer):
     items = BookingItemSerializer(many=True, read_only=True)
     customer_details = UserSerializer(source='customer', read_only=True)
     employee_details = EmployeeProfileSerializer(source='employee', read_only=True)
-
-    service_ids = serializers.ListField(
-        child=serializers.IntegerField(), write_only=True
-    )
+    service_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True)
 
     class Meta:
         model = Booking
@@ -35,7 +32,7 @@ class BookingSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['token_number', 'total_price', 'created_at', 'status', 'actual_start_time', 'actual_end_time']
 
-    # 🔥 FIXED: Time Overlap Validation
+    # Time Overlap Validation
     def validate(self, data):
         """
         Validates the booking time to ensure no overlap with existing appointments for the same employee.
@@ -53,8 +50,7 @@ class BookingSerializer(serializers.ModelSerializer):
                 services = Service.objects.filter(id__in=service_ids)
                 req_duration = sum(s.duration_minutes for s in services)
             
-            if req_duration == 0: req_duration = 30 # Default safety
-            
+            if req_duration == 0: req_duration = 30 # Default
             req_start_dt = datetime.combine(booking_date, booking_time)
             req_end_dt = req_start_dt + timedelta(minutes=req_duration)
 
@@ -72,7 +68,6 @@ class BookingSerializer(serializers.ModelSerializer):
                 exist_start_dt = datetime.combine(booking.booking_date, booking.booking_time)
                 exist_end_dt = exist_start_dt + timedelta(minutes=exist_duration)
 
-                # 🔥 OVERLAP CHECK FORMULA:
                 # (NewStart < OldEnd) AND (NewEnd > OldStart)
                 if req_start_dt < exist_end_dt and req_end_dt > exist_start_dt:
                     suggested_time = exist_end_dt.time()

@@ -55,7 +55,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     serializer_class = EmployeeProfileSerializer 
 
-    # 🔥 ENABLE SEARCH (Name, Email, Job Title)
+    # ENABLE SEARCH (Name, Email, Job Title)
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__username', 'user__email', 'user__phone_number', 'job_title']
 
@@ -70,22 +70,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeCreationSerializer
         return EmployeeProfileSerializer
 
-    # 🔥 CRITICAL FIX: Delete the User when Employee is deleted
+    # Delete the User when Employee is deleted
     def perform_destroy(self, instance):
         """
         Hard Delete: Deletes the associated User object when the EmployeeProfile is deleted.
         Django's on_delete=CASCADE mechanism handles the profile deletion automatically.
         """
         user = instance.user
-        user.delete() # This deletes the User AND the Profile (Cascade)
+        user.delete()
 
 class AttendanceViewSet(viewsets.ModelViewSet):
     queryset = Attendance.objects.all().order_by('-date', '-check_in')
     serializer_class = AttendanceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # 🔥 ENABLE FILTERING (Get attendance for specific employee)
-    # URL Example: /api/v1/accounts/attendance/?employee=5
+    # ENABLE FILTERING (Get attendance for specific employee)
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['employee']
 
@@ -130,7 +129,6 @@ class GoogleLoginView(APIView):
         
         try:
             # Verify the token with Google's servers
-            # REPLACE 'YOUR_GOOGLE_CLIENT_ID' with your actual Client ID from Google Cloud Console
             id_info = id_token.verify_oauth2_token(
                 token, 
                 google_requests.Request(), 
@@ -146,12 +144,10 @@ class GoogleLoginView(APIView):
             user, created = User.objects.get_or_create(
                 email=email,
                 defaults={
-                    'username': email, # Fallback since you use email as username
+                    'username': email,
                     'first_name': first_name,
                     'last_name': last_name,
                     'role': 'CUSTOMER',
-                    # Handle phone_number if it is NOT NULL in DB. 
-                    # If strictly required, use a placeholder or handle explicitly.
                     'phone_number': '' 
                 }
             )
