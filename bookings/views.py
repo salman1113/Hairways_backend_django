@@ -33,15 +33,9 @@ class BookingViewSet(viewsets.ModelViewSet):
         return queryset
     
     def create(self, request, *args, **kwargs):
-        """
-        Logs the incoming booking request for debugging purposes before processing.
-        """
-        print(f"📥 Booking Request from {request.user}: {request.data}") 
-        
         serializer = self.get_serializer(data=request.data)
         
         if not serializer.is_valid():
-            print("❌ Booking Failed:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         self.perform_create(serializer)
@@ -49,16 +43,28 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     # Sequential Token Generation (Reset Daily)
+    # Sequential Token Generation (Reset Daily)
     def perform_create(self, serializer):
         """
         Sequential Token Generation:
         - Generates a daily resetting token (e.g., T-1, T-2).
-        - format: T-{count + 1}
+        - format: T-{max + 1}
         """
         booking_date = serializer.validated_data.get('booking_date')
-        existing_count = Booking.objects.filter(booking_date=booking_date).count()
-
-        next_token = existing_count + 1
+        
+        # Robust way to find the next token number for this date
+        daily_bookings = Booking.objects.filter(booking_date=booking_date).values_list('token_number', flat=True)
+        max_number = 0
+        for token_str in daily_bookings:
+            if token_str and token_str.startswith('T-'):
+                try:
+                    num = int(token_str.split('-')[1])
+                    if num > max_number:
+                        max_number = num
+                except (IndexError, ValueError):
+                    continue
+        
+        next_token = max_number + 1
         token = f"T-{next_token}"
 
         if self.request.user.is_authenticated:

@@ -15,7 +15,7 @@ class User(AbstractUser):
         ('CUSTOMER', 'Customer'),
     )
 
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='CUSTOMER')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='CUSTOMER', db_index=True)  # Indexed for filtering users by role (e.g., finding all employees)
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
@@ -39,7 +39,7 @@ class EmployeeProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='employee_profile')
     
     # Professional Details
-    job_title = models.CharField(max_length=50, default="Stylist")
+    job_title = models.CharField(max_length=50, default="Stylist", db_index=True)  # Indexed for searching employees by title
     years_of_experience = models.PositiveIntegerField(default=1)
     expertise = models.CharField(max_length=255, default="General")
     
@@ -65,7 +65,7 @@ class Attendance(models.Model):
     Tracks daily check-in/check-out for payroll calculation.
     """
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='attendance')
-    date = models.DateField(auto_now_add=True)
+    date = models.DateField(auto_now_add=True, db_index=True)  # Indexed for daily attendance reports
     check_in = models.TimeField(auto_now_add=True)
     check_out = models.TimeField(null=True, blank=True)
     is_late = models.BooleanField(default=False)

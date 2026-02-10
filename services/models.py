@@ -29,7 +29,7 @@ class Product(models.Model):
     """
     name = models.CharField(max_length=100)
     brand = models.CharField(max_length=50, blank=True)
-    stock_quantity = models.PositiveIntegerField(default=0)
+    stock_quantity = models.PositiveIntegerField(default=0, db_index=True)  # Indexed for quick lookup of low-stock items
     low_stock_threshold = models.PositiveIntegerField(default=5, help_text="Alert when stock dips below this")
     price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Cost per unit")
     
