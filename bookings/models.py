@@ -43,7 +43,10 @@ class Booking(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        unique_together = ('booking_date', 'token_number')
+        unique_together = [
+            ('booking_date', 'token_number'),
+            ('employee', 'booking_date', 'booking_time')  # Prevent double-booking: An employee cannot have two bookings at the same time
+        ]
 
     def __str__(self):
         return f"Token #{self.token_number} - {self.status}"

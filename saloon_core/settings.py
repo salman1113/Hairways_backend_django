@@ -48,6 +48,9 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
 
+    # swagger
+    'drf_yasg',
+
     # Our Custom Apps
     'accounts',
     'services',
@@ -136,6 +139,15 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+LOGIN_URL = '/api-auth/login/'
+LOGIN_REDIRECT_URL = '/swagger/'
+LOGOUT_URL = '/api-auth/logout/'
+LOGOUT_REDIRECT_URL = '/swagger/'
 
 #Custom User Model Setting
 AUTH_USER_MODEL = 'accounts.User'
@@ -146,6 +158,8 @@ AUTH_USER_MODEL = 'accounts.User'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',  # Enable Session Auth for Browsable API / Swagger
+        'rest_framework.authentication.BasicAuthentication',  # Enable Basic Auth for Swagger Authorize button
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated', # by default everyside must want login

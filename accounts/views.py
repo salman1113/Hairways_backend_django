@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend # 🔥 For Filtering Attendance
 from .models import EmployeeProfile, Attendance
-from .serializers import UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, EmployeeCreationSerializer, GoogleLoginSerializer
+from .serializers import UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, EmployeeCreationSerializer, GoogleLoginSerializer, UserRegistrationSerializer
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from google.oauth2 import id_token
@@ -31,7 +31,11 @@ class IsSelfOrAdmin(permissions.BasePermission):
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    serializer_class = UserSerializer
+    
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserRegistrationSerializer
+        return UserSerializer
 
     def get_permissions(self):
         if self.action == 'create': 

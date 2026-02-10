@@ -12,7 +12,19 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'username', 'role', 'phone_number', 'profile_picture']
 
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username', 'password', 'phone_number']
+
+    def create(self, validated_data):
+        return User.objects.create_user(**validated_data)
+
 class AttendanceSerializer(serializers.ModelSerializer):
+    date = serializers.DateField(read_only=True)  # Explicitly define to avoid Swagger datetime error
+    
     class Meta:
         model = Attendance
         fields = '__all__'

@@ -2,3 +2,4 @@ google-auth
 requests
 djangorestframework-simplejwt
 django-filter
+drf-yasg

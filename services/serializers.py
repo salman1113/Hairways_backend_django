@@ -32,3 +32,12 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = '__all__'
+
+class BulkServiceSerializer(serializers.Serializer):
+    """
+    Serializer to handle bulk creation of services under a category
+    """
+    category_name = serializers.CharField(max_length=50)
+    services = serializers.ListField(
+        child=serializers.DictField() 
+    )

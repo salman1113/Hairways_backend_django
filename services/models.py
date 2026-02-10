@@ -12,7 +12,7 @@ class Category(models.Model):
 
 class Service(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='services')
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)  # Unique service names to avoid duplication
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     duration_minutes = models.PositiveIntegerField(help_text="Estimated duration in minutes")
@@ -33,5 +33,9 @@ class Product(models.Model):
     low_stock_threshold = models.PositiveIntegerField(default=5, help_text="Alert when stock dips below this")
     price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Cost per unit")
     
+    
+    class Meta:
+        unique_together = ('name', 'brand')  # Prevent duplicate products: Same name and brand cannot exist twice
+
     def __str__(self):
         return f"{self.name} ({self.stock_quantity} left)"
