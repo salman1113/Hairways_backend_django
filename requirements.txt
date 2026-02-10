@@ -1,5 +1,11 @@
-google-auth
-requests
+Django>=5.0
+djangorestframework
 djangorestframework-simplejwt
+django-cors-headers
 django-filter
 drf-yasg
+psycopg2-binary
+python-dotenv
+Pillow
+google-auth
+requests

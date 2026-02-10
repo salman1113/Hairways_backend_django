@@ -42,7 +42,15 @@ class BookingSerializer(serializers.ModelSerializer):
         employee = data.get('employee')
         booking_date = data.get('booking_date')
         booking_time = data.get('booking_time')
-        service_ids = data.get('service_ids', [])
+        service_ids = data.get('service_ids')
+        
+        if not service_ids:
+             raise serializers.ValidationError({"service_ids": "At least one service is required."})
+        
+        # Validate Service IDs existence
+        valid_services_count = Service.objects.filter(id__in=service_ids, is_active=True).count()
+        if valid_services_count != len(set(service_ids)):
+             raise serializers.ValidationError({"service_ids": "One or more services are invalid or inactive."})
 
         if employee and booking_date and booking_time:
             req_duration = 0

@@ -37,10 +37,7 @@ urlpatterns = [
     # DRF Login/Logout (Session Auth)
     path('api-auth/', include('rest_framework.urls')),
     
-    # Handle Django default login/logout URLs used by Swagger/Admin
-    path('accounts/', include('rest_framework.urls')),
-
-    #  Swagger and Redoc URLs
+    # Swagger and Redoc URLs
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),

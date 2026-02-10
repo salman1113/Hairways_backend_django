@@ -19,9 +19,6 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
-    face_shape = models.CharField(max_length=20, null=True, blank=True)
-    points = models.PositiveIntegerField(default=0, help_text="Loyalty Points (1 Haircut = 10 Points)")
-    tier = models.CharField(max_length=20, default="Silver", choices=[("Silver", "Silver"), ("Gold", "Gold"), ("Platinum", "Platinum")])
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'phone_number']
@@ -55,9 +52,30 @@ class EmployeeProfile(models.Model):
     shift_start = models.TimeField(null=True, blank=True, help_text="Shift Start Time")
     shift_end = models.TimeField(null=True, blank=True, help_text="Shift End Time")
     wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Accumulated Commission")
+    base_salary = models.DecimalField(max_digits=10, decimal_places=2, default=15000.00, help_text="Fixed Monthly Salary")
 
     def __str__(self):
         return f"{self.user.email} - {self.job_title}"
+
+class CustomerProfile(models.Model):
+    """
+    Extended Profile for Customers:
+    - Default profile logic for regular users.
+    - Stores loyalty info and preferences.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='customer_profile')
+    
+    face_shape = models.CharField(max_length=20, null=True, blank=True)
+    points = models.PositiveIntegerField(default=0, help_text="Loyalty Points (1 Haircut = 10 Points)")
+    tier = models.CharField(max_length=20, default="Silver", choices=[("Silver", "Silver"), ("Gold", "Gold"), ("Platinum", "Platinum")])
+    
+    # New Details
+    bio = models.TextField(blank=True, help_text="Customer notes or bio")
+    preferences = models.TextField(blank=True, help_text="Styling preferences (JSON or Text)")
+    birth_date = models.DateField(null=True, blank=True)
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.tier}"
 
 class Attendance(models.Model):
     """
@@ -75,3 +93,32 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.employee.user.username} - {self.date}"
+
+class Payroll(models.Model):
+    """
+    Monthly Payroll Record
+    - Stores the snapshot of salary for a specific month.
+    """
+    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name='payrolls')
+    month = models.DateField(help_text="First day of the month (e.g. 2023-10-01)")
+    
+    # Financial Components
+    base_salary = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_earned = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    deductions = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    bonus = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    
+    total_salary = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    status = models.CharField(
+        max_length=10, 
+        choices=[('PENDING', 'Pending'), ('PAID', 'Paid')], 
+        default='PENDING'
+    )
+    generated_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('employee', 'month')
+
+    def __str__(self):
+        return f"Payroll {self.employee.user.username} - {self.month.strftime('%B %Y')}"

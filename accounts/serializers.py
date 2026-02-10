@@ -2,15 +2,51 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
-from .models import EmployeeProfile, Attendance
+from .models import EmployeeProfile, Attendance, Payroll
 
 User = get_user_model()
 
-# ... (UserSerializer & AttendanceSerializer same as before) ...
 class UserSerializer(serializers.ModelSerializer):
+    # Customer Profile Fields (Writable)
+    face_shape = serializers.CharField(source='customer_profile.face_shape', required=False, allow_null=True, allow_blank=True)
+    points = serializers.IntegerField(source='customer_profile.points', read_only=True) # Keep points read-only
+    tier = serializers.CharField(source='customer_profile.tier', read_only=True) # Keep tier read-only
+    
+    bio = serializers.CharField(source='customer_profile.bio', required=False, allow_blank=True)
+    preferences = serializers.CharField(source='customer_profile.preferences', required=False, allow_blank=True)
+    birth_date = serializers.DateField(source='customer_profile.birth_date', required=False, allow_null=True)
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'role', 'phone_number', 'profile_picture']
+        fields = [
+            'id', 'email', 'username', 'role', 'phone_number', 'profile_picture', 
+            'face_shape', 'points', 'tier', 'bio', 'preferences', 'birth_date'
+        ]
+        read_only_fields = ['role', 'points', 'tier']
+
+    def update(self, instance, validated_data):
+        # 1. Extract Nested Data (if any)
+        profile_data = {}
+        for field in ['customer_profile']:
+            # drf source='customer_profile.xyz' puts data into validated_data['customer_profile']['xyz']
+            if field in validated_data:
+                profile_data_nested = validated_data.pop(field)
+                if isinstance(profile_data_nested, dict):
+                    profile_data.update(profile_data_nested)
+
+        # 2. Update User Fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # 3. Update CustomerProfile Fields
+        if hasattr(instance, 'customer_profile') and profile_data:
+            profile = instance.customer_profile
+            for attr, value in profile_data.items():
+                setattr(profile, attr, value)
+            profile.save()
+
+        return instance
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -29,7 +65,13 @@ class AttendanceSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = '__all__'
 
-# ... (EmployeeProfileSerializer same as before) ...
+class PayrollSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.user.username', read_only=True)
+    month = serializers.DateField(format="%Y-%m-%d")
+
+    class Meta:
+        model = Payroll
+        fields = '__all__'
 class EmployeeProfileSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     attendance_today = serializers.SerializerMethodField()
@@ -110,14 +152,14 @@ class EmployeeCreationSerializer(serializers.ModelSerializer):
                     for k in ['username', 'email', 'password', 'phone_number']
                 }
                 
-                # 2. Create User (This triggers the Signal to create Profile)
+                # 2. Create User (Triggers Signal)
                 user = User.objects.create_user(**user_data, role='EMPLOYEE')
                 
-                # 3. CRITICAL FIX: Get the auto-created profile instead of creating new one
+                # 3. Get auto-created profile
                 if hasattr(user, 'employee_profile'):
                     employee = user.employee_profile
                 else:
-                    # Fallback if signal didn't run (rare)
+                    # Fallback (Safety)
                     employee = EmployeeProfile.objects.create(user=user)
 
                 # 4. Update the profile with form data

@@ -1,180 +1,301 @@
-from rest_framework import viewsets, permissions, filters, status
-from rest_framework.decorators import action
+from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status, permissions, filters
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django_filters.rest_framework import DjangoFilterBackend # 🔥 For Filtering Attendance
-from .models import EmployeeProfile, Attendance
-from .serializers import UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, EmployeeCreationSerializer, GoogleLoginSerializer, UserRegistrationSerializer
-from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
+from .models import EmployeeProfile, Attendance, Payroll
+from .serializers import (
+    UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, 
+    EmployeeCreationSerializer, UserRegistrationSerializer, PayrollSerializer,
+    GoogleLoginSerializer
+)
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db import transaction
+from django.db.models import Sum
+from datetime import datetime, date
+from django.conf import settings
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-from django.conf import settings
-import uuid
+from django.utils.crypto import get_random_string
 
 User = get_user_model()
+from .permissions import IsAdminOrReadOnly, IsEmployeeOwnerOrReadOnly, IsSelfOrAdmin
 
-# --- PERMISSIONS ---
+# --- USER APIS ---
 
-class IsAdminOrReadOnly(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS: return True
-        return request.user.is_authenticated and request.user.role == 'ADMIN'
+class RegisterApi(APIView):
+    permission_classes = [permissions.AllowAny]
 
-class IsSelfOrAdmin(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        if request.user.role == 'ADMIN': return True
-        return obj == request.user
+    def post(self, request):
+        serializer = UserRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "user": UserSerializer(user).data,
+                "message": "User created successfully. Please login."
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# --- VIEWSETS ---
-
-class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    
-    def get_serializer_class(self):
-        if self.action == 'create':
-            return UserRegistrationSerializer
-        return UserSerializer
-
-    def get_permissions(self):
-        if self.action == 'create': 
-            return [permissions.AllowAny()]
-        elif self.action in ['update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated(), IsSelfOrAdmin()]
-        return [permissions.IsAuthenticated()]
-
-    @action(detail=False, methods=['get'])
-    def me(self, request):
-        """
-        Retrieves the profile of the currently authenticated user.
-        """
-        if request.user.is_authenticated:
-            serializer = self.get_serializer(request.user)
-            return Response(serializer.data)
-        return Response({"error": "Not authenticated"}, status=status.HTTP_401_UNAUTHORIZED)
-
-class EmployeeViewSet(viewsets.ModelViewSet):
-    queryset = EmployeeProfile.objects.select_related('user').all()
-    permission_classes = [IsAdminOrReadOnly]
-    serializer_class = EmployeeProfileSerializer 
-
-    # ENABLE SEARCH (Name, Email, Job Title)
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['user__username', 'user__email', 'user__phone_number', 'job_title']
-
-    # Use Custom Serializer only for Creating Employees
-    def get_serializer_class(self):
-        """
-        Selects the serializer based on the action:
-        - create: EmployeeCreationSerializer (Handles User + Profile creation)
-        - others: EmployeeProfileSerializer (Read/Update Profile only)
-        """
-        if self.action == 'create':
-            return EmployeeCreationSerializer
-        return EmployeeProfileSerializer
-
-    # Delete the User when Employee is deleted
-    def perform_destroy(self, instance):
-        """
-        Hard Delete: Deletes the associated User object when the EmployeeProfile is deleted.
-        Django's on_delete=CASCADE mechanism handles the profile deletion automatically.
-        """
-        user = instance.user
-        user.delete()
-
-class AttendanceViewSet(viewsets.ModelViewSet):
-    queryset = Attendance.objects.all().order_by('-date', '-check_in')
-    serializer_class = AttendanceSerializer
+class UserProfileApi(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    # ENABLE FILTERING (Get attendance for specific employee)
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['employee']
+    def get(self, request):
+        """Get current user profile"""
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
 
-    @action(detail=False, methods=['post'])
-    def punch(self, request):
-        """
-        Attendance Punch Logic:
-        - Logic: First punch of the day -> Check-In.
-        - Second punch of the day -> Check-Out.
-        """
+    def patch(self, request):
+        """Update current user profile"""
+        print(f"DEBUG: PATCH /me/ payload: {request.data}")
+        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        print(f"DEBUG: Serializer Errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# --- EMPLOYEE APIS ---
+
+class EmployeeListCreateApi(APIView):
+    permission_classes = [IsAdminOrReadOnly] 
+
+    def get(self, request):
+        queryset = EmployeeProfile.objects.select_related('user').all()
+        # Search functionality
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(job_title__icontains=search)
+        
+        serializer = EmployeeProfileSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        """Admin creates employee (User + Profile)"""
+        if request.user.role != 'ADMIN':
+             return Response({"error": "Admin only"}, status=403)
+             
+        serializer = EmployeeCreationSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class EmployeeDetailApi(APIView):
+    permission_classes = [IsEmployeeOwnerOrReadOnly]
+
+    def get_object(self, pk):
+        return get_object_or_404(EmployeeProfile, pk=pk)
+
+    def get(self, request, pk):
+        profile = self.get_object(pk)
+        serializer = EmployeeProfileSerializer(profile)
+        return Response(serializer.data)
+
+    def patch(self, request, pk):
+        profile = self.get_object(pk)
+        self.check_object_permissions(request, profile)
+        
+        serializer = EmployeeProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        profile = self.get_object(pk)
+        if request.user.role != 'ADMIN': return Response({"error": "Admin only"}, status=403)
+        user = profile.user
+        user.delete() # Hard delete user
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+# --- ATTENDANCE APIS ---
+
+class AttendanceListApi(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        queryset = Attendance.objects.all().order_by('-date', '-check_in')
+        
+        # Filter by employee
+        employee_id = request.query_params.get('employee')
+        if employee_id:
+            queryset = queryset.filter(employee_id=employee_id)
+            
+        serializer = AttendanceSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+class AttendancePunchApi(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
         user = request.user
         if not hasattr(user, 'employee_profile'):
-            return Response({"error": "Only employees can punch attendance"}, status=403)
+             return Response({"error": "Not an employee"}, status=403)
         
-        employee = user.employee_profile
+        profile = user.employee_profile
         today = timezone.now().date()
         now_time = timezone.now().time()
-
-        attendance = Attendance.objects.filter(employee=employee, date=today).first()
-
-        if not attendance:
-            # Punch In
-            Attendance.objects.create(employee=employee, check_in=now_time)
-            return Response({"status": "Punched In", "time": now_time})
+        
+        # Check for existing record today
+        attendance, created = Attendance.objects.get_or_create(employee=profile, date=today)
+        
+        if created:
+            # First punch = Check In
+            attendance.check_in = now_time
+            # Late Logic (e.g., after 10 AM)
+            if profile.shift_start and now_time > profile.shift_start:
+                attendance.is_late = True
+            attendance.save()
+            return Response({"status": "Checked In", "time": now_time})
         else:
-            # Punch Out
+            # Second punch = Check Out
             if attendance.check_out:
-                return Response({"error": "Already punched out for today"}, status=400)
+                return Response({"status": "Already Checked Out"}, status=400)
             
             attendance.check_out = now_time
             attendance.save()
-            attendance.save()
-            return Response({"status": "Punched Out", "time": now_time})
+            return Response({"status": "Checked Out", "time": now_time})
 
-class GoogleLoginView(APIView):
+# --- PAYROLL APIS ---
+
+class PayrollListApi(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role == 'ADMIN':
+            queryset = Payroll.objects.select_related('employee__user').all().order_by('-month')
+        elif hasattr(user, 'employee_profile'):
+            queryset = Payroll.objects.filter(employee=user.employee_profile).order_by('-month')
+        else:
+            return Response({"error": "Not authorized"}, status=403)
+        
+        serializer = PayrollSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+class GeneratePayrollApi(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
+    def post(self, request):
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Admin only"}, status=403)
+
+        month_str = request.data.get('month') # expected 'YYYY-MM-DD' (e.g., '2023-10-01')
+        if not month_str:
+            return Response({"error": "Month is required (YYYY-MM-DD)"}, status=400)
+            
+        try:
+            month_date = datetime.strptime(month_str, '%Y-%m-%d').date()
+            # Normalize to first of month
+            month_start = date(month_date.year, month_date.month, 1)
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+
+        employees = EmployeeProfile.objects.all()
+        generated_count = 0
+
+        with transaction.atomic():
+            for emp in employees:
+                # 1. Check if payroll already exists
+                if Payroll.objects.filter(employee=emp, month=month_start).exists():
+                    continue
+
+                # 2. Calculate Components
+                base = emp.base_salary
+                commission = emp.wallet_balance # Commission Paid Out
+                
+                deductions = 0 
+                # Simple logic: Deduct 100 per late arrival in this month
+                late_count = Attendance.objects.filter(
+                    employee=emp, 
+                    date__year=month_start.year, 
+                    date__month=month_start.month,
+                    is_late=True
+                ).count()
+                deductions = late_count * 100
+
+                # Ensure total is not negative
+                total = max(0, base + commission - deductions)
+
+                # 3. Create Payroll Record
+                Payroll.objects.create(
+                    employee=emp,
+                    month=month_start,
+                    base_salary=base,
+                    commission_earned=commission,
+                    deductions=deductions,
+                    total_salary=total,
+                    status='PENDING'
+                )
+                
+                # 4. Reset Wallet (Commission Paid Out)
+                emp.wallet_balance = 0
+                emp.save()
+                
+                generated_count += 1
+
+        return Response({
+            "status": "success", 
+            "message": f"Generated payroll for {generated_count} employees for {month_start.strftime('%B %Y')}"
+        })
+
+class GoogleLoginApi(APIView):
     permission_classes = [permissions.AllowAny]
+
     def post(self, request):
         serializer = GoogleLoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
         token = serializer.validated_data['id_token']
-        
         try:
-            # Verify the token with Google's servers
+            print(f"DEBUG: Received Google Token: {token[:20]}...")
+            
+            # Verify Token
+            # Verify Token
             id_info = id_token.verify_oauth2_token(
                 token, 
                 google_requests.Request(), 
-                getattr(settings, 'GOOGLE_CLIENT_ID', None)
+                settings.GOOGLE_CLIENT_ID,
+                clock_skew_in_seconds=10
             )
 
-            # Extract user info
-            email = id_info.get('email')
-            first_name = id_info.get('given_name', '')
-            last_name = id_info.get('family_name', '')
 
-            # Check if user exists
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    'username': email,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'role': 'CUSTOMER',
-                    'phone_number': '' 
-                }
-            )
+            email = id_info['email']
+            print(f"DEBUG: Email from token: {email}")
+            
+            try:
+                user = User.objects.get(email=email)
 
-            if created:
-                user.set_unusable_password()
-                user.save()
+            except User.DoesNotExist:
 
-            # Generate JWT Tokens
+                username = email.split('@')[0]
+                if User.objects.filter(username=username).exists():
+                    username = f"{username}_{int(datetime.now().timestamp())}"
+                
+
+
+                user = User.objects.create_user(
+                    email=email,
+                    username=username,
+                    role='CUSTOMER',
+                    password=get_random_string(length=32)
+                )
+
+
             refresh = RefreshToken.for_user(user)
             
             return Response({
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-                'user': {
-                    'email': user.email,
-                    'role': user.role,
-                    'first_name': user.first_name
-                }
-            }, status=status.HTTP_200_OK)
-
+                'user': UserSerializer(user).data
+            })
         except ValueError as e:
-            # Invalid token
-            return Response({'error': 'Invalid Google Token'}, status=status.HTTP_400_BAD_REQUEST)
+            print(f"DEBUG: ValueError: {e}")
+            return Response({"error": "Invalid Google Token", "details": str(e)}, status=400)
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            import traceback
+            traceback.print_exc()
+            print(f"DEBUG: Exception: {e}")
+            return Response({"error": str(e), "trace": traceback.format_exc()}, status=500)

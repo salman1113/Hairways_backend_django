@@ -1,18 +1,33 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, EmployeeViewSet, AttendanceViewSet, GoogleLoginView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-
-router = DefaultRouter()
-router.register(r'users', UserViewSet)
-router.register(r'employees', EmployeeViewSet)
-router.register(r'attendance', AttendanceViewSet) # 🔥 Added Attendance
+from .views import (
+    RegisterApi, UserProfileApi, 
+    EmployeeListCreateApi, EmployeeDetailApi,
+    AttendanceListApi, AttendancePunchApi,
+    PayrollListApi, GeneratePayrollApi,
+    GoogleLoginApi
+)
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 urlpatterns = [
-    path('', include(router.urls)),
-
-    # Login Link
+    # Auth & User
+    path('register/', RegisterApi.as_view(), name='register'),
     path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('google-login/', GoogleLoginView.as_view(), name='google_login'),
+    path('login/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('login/google/', GoogleLoginApi.as_view(), name='google-login'),
+    path('me/', UserProfileApi.as_view(), name='user-profile'),
+        
+    # Employees
+    path('employees/', EmployeeListCreateApi.as_view(), name='employee-list'),
+    path('employees/<int:pk>/', EmployeeDetailApi.as_view(), name='employee-detail'),
+    
+    # Attendance
+    path('attendance/', AttendanceListApi.as_view(), name='attendance-list'),
+    path('attendance/punch/', AttendancePunchApi.as_view(), name='attendance-punch'),
+
+    # Payroll
+    path('payroll/', PayrollListApi.as_view(), name='payroll-list'),
+    path('payroll/generate/', GeneratePayrollApi.as_view(), name='payroll-generate'),
 ]
