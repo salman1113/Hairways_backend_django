@@ -4,7 +4,7 @@ from .views import (
     EmployeeListCreateApi, EmployeeDetailApi,
     AttendanceListApi, AttendancePunchApi,
     PayrollListApi, GeneratePayrollApi,
-    GoogleLoginApi
+    GoogleLoginApi, UserListApi
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -18,6 +18,7 @@ urlpatterns = [
     path('login/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('login/google/', GoogleLoginApi.as_view(), name='google-login'),
     path('me/', UserProfileApi.as_view(), name='user-profile'),
+    path('users/', UserListApi.as_view(), name='user-list'),
         
     # Employees
     path('employees/', EmployeeListCreateApi.as_view(), name='employee-list'),

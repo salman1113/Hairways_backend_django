@@ -55,6 +55,18 @@ class UserProfileApi(APIView):
         print(f"DEBUG: Serializer Errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class UserListApi(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        """Admin only: List all users"""
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Admin only"}, status=status.HTTP_403_FORBIDDEN)
+        
+        queryset = User.objects.all().order_by('-date_joined')
+        serializer = UserSerializer(queryset, many=True)
+        return Response(serializer.data)
+
 # --- EMPLOYEE APIS ---
 
 class EmployeeListCreateApi(APIView):
