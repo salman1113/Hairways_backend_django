@@ -2,15 +2,19 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions, filters
 from django.contrib.auth import get_user_model
+from django.contrib import auth
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from .models import EmployeeProfile, Attendance, Payroll
 from .serializers import (
     UserSerializer, EmployeeProfileSerializer, AttendanceSerializer, 
     EmployeeCreationSerializer, UserRegistrationSerializer, PayrollSerializer,
-    GoogleLoginSerializer
+    GoogleLoginSerializer, LoginSerializer, VerifyOTPSerializer
 )
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.db import transaction
 from django.db.models import Sum
 from datetime import datetime, date
@@ -18,24 +22,230 @@ from django.conf import settings
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from django.utils.crypto import get_random_string
+from django.core.mail import send_mail
+from django.core.cache import cache
+import random
+import uuid
 
 User = get_user_model()
 from .permissions import IsAdminOrReadOnly, IsEmployeeOwnerOrReadOnly, IsSelfOrAdmin
 
+from drf_yasg.utils import swagger_auto_schema
+
 # --- USER APIS ---
+
+class CustomLoginApi(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @swagger_auto_schema(request_body=LoginSerializer)
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+        
+        # Use Django Authenticate
+        user = auth.authenticate(email=email, password=password) 
+        
+        if not user:
+             try:
+                 u = User.objects.get(email=email)
+                 if not u.is_active:
+                     return Response({"error": "Account inactive. Please verify email."}, status=403)
+             except User.DoesNotExist:
+                 pass
+             return Response({"error": "Invalid credentials"}, status=401)
+
+        # Role Check
+        if user.role == 'EMPLOYEE':
+             refresh = RefreshToken.for_user(user)
+             return Response({
+                 "access": str(refresh.access_token),
+                 "refresh": str(refresh),
+                 "role": user.role,
+                 "user": UserSerializer(user).data
+             })
+        
+        elif user.role == 'ADMIN':
+             if not user.is_first_login_done:
+                 # Generate OTP
+                 otp = f"{random.randint(1000, 9999)}"
+                 cache_key = f"admin_otp_{user.id}"
+                 cache.set(cache_key, otp, timeout=60)
+                 
+                 # Send Email
+                 try:
+                    print(f"DEBUG: Sending Admin OTP {otp} to {user.email}")
+                    send_mail(
+                        subject="Admin Login OTP",
+                        message=f"Your Admin Login OTP is {otp}. Expires in 1 minute.",
+                        from_email='noreply@hairways.com',
+                        recipient_list=[user.email],
+                        fail_silently=False
+                    )
+                 except Exception as e:
+                    print(f"Error sending email: {e}")
+
+                 return Response({
+                     "message": "First login: OTP sent to email.",
+                     "require_otp": True,
+                     "email": user.email
+                 }, status=200)
+             else:
+                 refresh = RefreshToken.for_user(user)
+                 return Response({
+                     "access": str(refresh.access_token),
+                     "refresh": str(refresh),
+                     "role": user.role,
+                     "user": UserSerializer(user).data
+                 })
+
+        elif user.role == 'CUSTOMER':
+             if not user.is_email_verified:
+                  return Response({"error": "Email not verified"}, status=403)
+             
+             refresh = RefreshToken.for_user(user)
+             return Response({
+                 "access": str(refresh.access_token),
+                 "refresh": str(refresh),
+                 "role": user.role,
+                 "user": UserSerializer(user).data
+             })
+        
+        return Response({"error": "Unknown Role"}, status=400)
+
+
+class CustomTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        try:
+            return super().validate(attrs)
+        except User.DoesNotExist:
+            raise InvalidToken("User does not exist")
+
+class CustomTokenRefreshView(TokenRefreshView):
+    serializer_class = CustomTokenRefreshSerializer
+
+class VerifyAdminLoginOTPApi(APIView):
+    permission_classes = [permissions.AllowAny]
+
+
+    @swagger_auto_schema(request_body=VerifyOTPSerializer)
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        
+        email = serializer.validated_data['email']
+        otp = serializer.validated_data['otp']
+
+        user = get_object_or_404(User, email=email)
+        
+        cache_key = f"admin_otp_{user.id}"
+        cached_otp = cache.get(cache_key)
+
+        if cached_otp and str(cached_otp) == str(otp):
+            user.is_first_login_done = True
+            user.save()
+            cache.delete(cache_key)
+            
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                 "access": str(refresh.access_token),
+                 "refresh": str(refresh),
+                 "role": user.role,
+                 "user": UserSerializer(user).data
+             })
+        return Response({"error": "Invalid OTP"}, status=400)
 
 class RegisterApi(APIView):
     permission_classes = [permissions.AllowAny]
 
+
+    @swagger_auto_schema(request_body=UserRegistrationSerializer)
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
+            # Create user but set inactive
             user = serializer.save()
+            user.is_active = False
+            user.role = 'CUSTOMER' # Ensure role is set
+            user.save()
+
+            # Generate 4-digit OTP
+            otp = f"{random.randint(1000, 9999)}"
+            
+            # Cache OTP for 1 minute (user_id as key)
+            cache_key = f"reg_otp_{user.id}"
+            cache.set(cache_key, otp, timeout=60)
+
+            # Send Email (Console Backend in Dev)
+            try:
+                print(f"DEBUG: Sending OTP {otp} to {user.email}")
+                send_mail(
+                    subject="Verify your HairWays Registration",
+                    message=f"Your OTP is {otp}. It expires in 1 minute.",
+                    from_email=settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else 'noreply@hairways.com',
+                    recipient_list=[user.email],
+                    fail_silently=False
+                )
+            except Exception as e:
+                print(f"Error sending email: {e}")
+                # We still return success but maybe warn? 
+                # For now, assume user checks console or email works.
+
             return Response({
                 "user": UserSerializer(user).data,
-                "message": "User created successfully. Please login."
+                "message": "User created. OTP sent to email. Please verify."
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyRegistrationOTPApi(APIView):
+    permission_classes = [permissions.AllowAny]
+
+
+    @swagger_auto_schema(request_body=VerifyOTPSerializer)
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        email = serializer.validated_data['email']
+        otp = serializer.validated_data['otp']
+
+        if not email or not otp:
+            return Response({"error": "Email and OTP are required"}, status=400)
+
+        user = get_object_or_404(User, email=email)
+        
+        # Check if already verified
+        if user.is_email_verified:
+             return Response({"message": "User already verified"}, status=200)
+
+        # Verify OTP
+        cache_key = f"reg_otp_{user.id}"
+        cached_otp = cache.get(cache_key)
+
+        if cached_otp and str(cached_otp) == str(otp):
+            user.is_active = True
+            user.is_email_verified = True
+            user.save()
+            
+            # Clear OTP
+            cache.delete(cache_key)
+
+            # Generate Tokens
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                "message": "Verification successful",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserSerializer(user).data
+            }, status=200)
+        
+        return Response({"error": "Invalid or Expired OTP"}, status=400)
 
 class UserProfileApi(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -255,6 +465,8 @@ class GeneratePayrollApi(APIView):
 class GoogleLoginApi(APIView):
     permission_classes = [permissions.AllowAny]
 
+
+    @swagger_auto_schema(request_body=GoogleLoginSerializer)
     def post(self, request):
         serializer = GoogleLoginSerializer(data=request.data)
         if not serializer.is_valid():

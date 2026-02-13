@@ -8,12 +8,20 @@ from django.shortcuts import get_object_or_404
 from datetime import datetime, date, timedelta
 from .models import Booking, BookingItem
 from .serializers import BookingSerializer
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 # --- CORE BOOKING APIS ---
 
 class BookingListCreateApi(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('date', openapi.IN_QUERY, description="Filter bookings by date (YYYY-MM-DD)", type=openapi.TYPE_STRING)
+        ],
+        responses={200: BookingSerializer(many=True)}
+    )
     def get(self, request):
         """
         List all bookings.
@@ -24,7 +32,7 @@ class BookingListCreateApi(APIView):
         queryset = Booking.objects.select_related(
             'customer', 'employee', 'employee__user'
         ).prefetch_related(
-            Prefetch('items', queryset=BookingItem.objects.select_related('service'))
+            'items__service'
         ).order_by('-booking_date', '-booking_time')
 
         date_param = request.query_params.get('date')
@@ -42,6 +50,10 @@ class BookingListCreateApi(APIView):
         serializer = BookingSerializer(queryset, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        request_body=BookingSerializer,
+        responses={201: BookingSerializer, 400: 'Bad Request'}
+    )
     def post(self, request):
         """
         Create a new booking with atomic transaction and sequential token generation.

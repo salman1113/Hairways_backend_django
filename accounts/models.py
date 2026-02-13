@@ -1,5 +1,23 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('role', 'ADMIN') # Auto-set role to ADMIN
+        extra_fields.setdefault('is_email_verified', True) # Auto-verify email
+        
+        return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
     """
@@ -20,8 +38,14 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
 
+    # Auth & Security
+    is_email_verified = models.BooleanField(default=False)
+    is_first_login_done = models.BooleanField(default=False, help_text="For Admins to force password reset or OTP on first login")
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'phone_number']
+
+    objects = CustomUserManager()
 
     def __str__(self):
         return self.email

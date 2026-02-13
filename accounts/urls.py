@@ -4,7 +4,9 @@ from .views import (
     EmployeeListCreateApi, EmployeeDetailApi,
     AttendanceListApi, AttendancePunchApi,
     PayrollListApi, GeneratePayrollApi,
-    GoogleLoginApi, UserListApi
+    GoogleLoginApi, UserListApi,
+    CustomLoginApi, VerifyRegistrationOTPApi, VerifyAdminLoginOTPApi,
+    CustomTokenRefreshView
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -14,8 +16,10 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     # Auth & User
     path('register/', RegisterApi.as_view(), name='register'),
-    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('login/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('register/verify/', VerifyRegistrationOTPApi.as_view(), name='register-verify'),
+    path('login/', CustomLoginApi.as_view(), name='login'),
+    path('login/admin/verify/', VerifyAdminLoginOTPApi.as_view(), name='admin-login-verify'),
+    path('login/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('login/google/', GoogleLoginApi.as_view(), name='google-login'),
     path('me/', UserProfileApi.as_view(), name='user-profile'),
     path('users/', UserListApi.as_view(), name='user-list'),
