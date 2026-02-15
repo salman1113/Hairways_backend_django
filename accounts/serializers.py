@@ -28,7 +28,6 @@ class UserSerializer(serializers.ModelSerializer):
         # 1. Extract Nested Data (if any)
         profile_data = {}
         for field in ['customer_profile']:
-            # drf source='customer_profile.xyz' puts data into validated_data['customer_profile']['xyz']
             if field in validated_data:
                 profile_data_nested = validated_data.pop(field)
                 if isinstance(profile_data_nested, dict):
